@@ -30,8 +30,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # IMAGE_NAME is always lowercase (GHCR requirement).
-  IMAGE_NAME: ${{ github.repository }}
+  # GHCR/OCI image names must be lowercase; github.repository keeps the username capital letters.
+  IMAGE_NAME: venkatas987/int333-devops
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────

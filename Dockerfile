@@ -9,7 +9,7 @@
 #   The result is a tiny Alpine image running as the unprivileged "node" user.
 
 # ─── Stage 1: builder ────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # ─── Stage 2: runtime ────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 
 # Remove npm, npx, and corepack from the runtime stage.
 # WHY: The runtime image only requires the `node` binary to execute server.js.

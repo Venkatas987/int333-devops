@@ -38,7 +38,7 @@ jobs:
     steps:
       - name: Checkout code
         # D4: Pinned to v4 (major version tag – stable API)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize CodeQL
         # Pinned to commit SHA for supply-chain security; Dependabot updates it.
@@ -70,7 +70,7 @@ jobs:
 
     steps:
       - name: Checkout code (with full history for Gitleaks)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # fetch-depth: 0 fetches the entire git history.
           # WHY: Gitleaks must scan all commits, not just the latest.

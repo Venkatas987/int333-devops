@@ -10,7 +10,7 @@
 # The Docker image to deploy.
 # Replace OWNER/REPO with your lowercase GitHub username/repository name.
 # This is updated by the CI pipeline: --extra-vars "app_image=ghcr.io/.../...:sha-abc123"
-app_image: "ghcr.io/OWNER/REPO:latest"
+app_image: "ghcr.io/venkatas987/int333-devops:latest"
 
 # Environment name (staging/production). Set by Terraform workspace via inventory.tpl.
 env_name: "staging"

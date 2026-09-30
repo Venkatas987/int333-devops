@@ -56,7 +56,7 @@ spec:
       containers:
         - name: myapp
           # Replace OWNER/REPO with your GitHub username/repository (must be lowercase).
-          image: ghcr.io/OWNER/REPO:latest
+          image: ghcr.io/venkatas987/int333-devops:latest
           ports:
             - containerPort: 3000
 

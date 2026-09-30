@@ -9,7 +9,7 @@
 #   The result is a tiny Alpine image running as the unprivileged "node" user.
 
 # ─── Stage 1: builder ────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,13 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # ─── Stage 2: runtime ────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
+
+# Remove npm, npx, and corepack from the runtime stage.
+# WHY: The runtime image only requires the `node` binary to execute server.js.
+# Bundled build-time tools (npm/corepack) carry high/critical CVEs in their dependencies
+# and are unnecessary in production, increasing container attack surface.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # Tell Node.js it's running in production – enables optimisations,
 # and stops Express (if added later) from serving stack traces.

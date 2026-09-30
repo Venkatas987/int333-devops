@@ -1,0 +1,135 @@
+# .github/workflows/infra.yml
+#
+# WHY THIS FILE EXISTS:
+# Validates all Infrastructure-as-Code files on every push that touches them.
+# This catches formatting errors, syntax mistakes and security misconfigurations
+# BEFORE they are run against real cloud accounts.
+#
+# Jobs:
+#   terraform    – format check, init (no backend), validate, Trivy config scan
+#   ansible      – install ansible-lint and check the main playbook
+#   puppet       – install puppet + puppet-lint and validate the manifests
+#   nagios-plugin – shellcheck on the custom Bash plugin
+
+name: Infrastructure Validation
+
+on:
+  push:
+    paths:
+      - "terraform/**"
+      - "ansible/**"
+      - "puppet/**"
+      - "nagios/**"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    paths:
+      - "terraform/**"
+      - "ansible/**"
+      - "puppet/**"
+      - "nagios/**"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Terraform validation
+  # WHY: `terraform validate` catches HCL syntax errors; `terraform fmt -check`
+  # enforces a consistent style so code reviews focus on logic, not whitespace.
+  # Trivy scans the Terraform for security misconfigurations (open security groups,
+  # unencrypted volumes, etc.) before any `apply` is attempted.
+  # ──────────────────────────────────────────────────────────────────────────
+  terraform:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Check formatting
+        # -check exits non-zero if any file is not formatted; -recursive checks subdirs.
+        run: terraform fmt -check -recursive
+
+      - name: Init (no backend)
+        # -backend=false skips remote state setup – we only want to validate syntax.
+        run: terraform init -backend=false
+
+      - name: Validate HCL syntax
+        run: terraform validate
+
+      - name: Trivy – scan Terraform for misconfigurations
+        # Pinned to commit SHA for supply-chain security; Dependabot updates it.
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        with:
+          scan-type: "config"
+          scan-ref:  "terraform/"
+          severity:  "CRITICAL,HIGH"
+          exit-code: "1"
+          trivyignores: "terraform/.trivyignore"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Ansible validation
+  # WHY: ansible-lint enforces best practices (idempotency, module usage, etc.)
+  # and catches YAML errors before the playbook is run against real servers.
+  # ──────────────────────────────────────────────────────────────────────────
+  ansible:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Ansible and ansible-lint
+        run: pip install ansible ansible-lint
+
+      - name: Syntax check the main playbook
+        run: ansible-playbook ansible/site.yml --syntax-check -i localhost,
+
+      - name: Run ansible-lint
+        run: ansible-lint ansible/site.yml
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Puppet validation
+  # WHY: `puppet parser validate` catches Ruby syntax errors in manifests.
+  # puppet-lint enforces the Puppet style guide (important for course marks).
+  # ──────────────────────────────────────────────────────────────────────────
+  puppet:
+    name: Puppet Validate & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Puppet and puppet-lint
+        run: |
+          gem install puppet puppet-lint --no-document
+
+      - name: Validate Puppet manifests
+        run: puppet parser validate puppet/manifests/site.pp
+
+      - name: Run puppet-lint
+        run: puppet-lint puppet/
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Nagios plugin validation
+  # WHY: shellcheck finds common Bash mistakes (unquoted variables, word splitting,
+  # incorrect exit codes) before the plugin is deployed to the monitoring server.
+  # ──────────────────────────────────────────────────────────────────────────
+  nagios-plugin:
+    name: Nagios Plugin ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on Nagios plugin
+        run: shellcheck nagios/plugins/check_app_health.sh

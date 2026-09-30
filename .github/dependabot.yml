@@ -1,0 +1,61 @@
+# .github/dependabot.yml
+#
+# WHY THIS FILE EXISTS:
+# Dependabot automatically opens pull requests when dependencies have updates.
+# This keeps the project secure without manual checking.
+#
+# We monitor 4 ecosystems:
+#   1. npm         – Node.js packages (package.json)
+#   2. docker      – Dockerfile base images (node:20-alpine)
+#   3. github-actions – Action versions (actions/checkout@v4, etc.)
+#   4. terraform   – Provider versions in versions.tf
+
+version: 2
+
+updates:
+  # ── Node.js (npm) ─────────────────────────────────────────────────────────
+  # WHY: If a CVE is found in a Node.js dependency, Dependabot opens a PR
+  # automatically so you can review and merge the fix.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  # ── Docker base image ──────────────────────────────────────────────────────
+  # WHY: node:20-alpine receives security updates.  Dependabot will open a PR
+  # when a newer Alpine patch is available.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  # WHY: Action versions (@v4, @v5) can have vulnerabilities.
+  # Dependabot pins actions to commit SHAs (most secure) or version tags.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # ── Terraform providers ────────────────────────────────────────────────────
+  # WHY: The AWS provider (~>5.0) gets frequent bug fixes and API additions.
+  - package-ecosystem: "terraform"
+    directory: "/terraform"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "terraform"

@@ -1,0 +1,13 @@
+---
+# ansible/roles/common/handlers/main.yml
+#
+# WHY HANDLERS:
+# A handler is a task that only runs when explicitly notified by another task.
+# In our case, we only restart sshd when the sshd_config actually changed.
+# If the config is already correct (idempotent run), the handler is never triggered
+# – so we don't interrupt existing SSH sessions unnecessarily.
+
+- name: Restart sshd
+  ansible.builtin.service:
+    name: sshd
+    state: restarted

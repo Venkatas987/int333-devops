@@ -1,0 +1,17 @@
+---
+# ansible/roles/nagios_server/handlers/main.yml
+#
+# WHY HANDLERS:
+# Handlers only run when notified. This ensures Nagios and Apache are restarted
+# ONCE at the end of the play, after ALL config changes have been made –
+# not after every individual change (which could cause temporary failures).
+
+- name: Restart nagios4
+  ansible.builtin.service:
+    name: nagios4
+    state: restarted
+
+- name: Restart apache2
+  ansible.builtin.service:
+    name: apache2
+    state: restarted

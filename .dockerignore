@@ -1,0 +1,20 @@
+# .dockerignore
+# WHY: These paths are excluded from the Docker build context.
+# A smaller build context = faster uploads to the Docker daemon and no risk
+# of accidentally baking secrets or huge toolchain directories into the image.
+
+node_modules
+.git
+.github
+k8s
+terraform
+ansible
+puppet
+nagios
+*.md
+.env
+.env.*
+*.tfstate
+*.tfstate.*
+.terraform
+test

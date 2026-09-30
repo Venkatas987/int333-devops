@@ -1,0 +1,116 @@
+---
+# ansible/roles/nagios_server/tasks/main.yml
+#
+# WHY THIS ROLE EXISTS:
+# Nagios Core is the monitoring engine. It runs on the monitor EC2 instance and
+# continuously checks the health of the app server.
+#
+# This role:
+#   1. Installs Nagios Core, monitoring plugins, Apache and dependencies
+#   2. Deploys the custom Bash plugin
+#   3. Templates the monitoring config (app host + services)
+#   4. Creates the HTTP digest login file (BUG FIX B3)
+#   5. Enables required Apache modules
+#   6. Ensures Nagios and Apache are running
+
+# ── 1. Install packages ───────────────────────────────────────────────────────
+# BUG FIX B4: lock_timeout prevents failures when apt is locked by unattended-upgrades
+# on freshly booted EC2 instances.  180 seconds gives enough time for apt to become free.
+- name: Install Nagios Core and dependencies
+  ansible.builtin.apt:
+    name:
+      - nagios4
+      - monitoring-plugins
+      - monitoring-plugins-standard
+      - apache2
+      - curl        # B8 VERIFIED: check_app_health.sh uses curl – installed here.
+      - bc          # B8 VERIFIED: check_app_health.sh uses bc for float comparisons – installed here.
+      - jq          # JSON processor utility for monitoring scripts
+      - libwww-perl
+    state: present
+    update_cache: true
+    lock_timeout: 180   # B4: wait up to 3 min for apt lock on fresh servers
+  tags: [nagios]
+
+# ── 2. Deploy the custom Nagios plugin ───────────────────────────────────────
+# WHY: Standard monitoring plugins (check_http) don't parse the JSON response.
+# Our custom plugin also returns performance data (response time) for graphing.
+# B8 VERIFIED: the plugin uses grep (not jq) to check the body – no jq needed.
+- name: Copy custom check_app_health plugin
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../nagios/plugins/check_app_health.sh"
+    dest: /usr/lib/nagios/plugins/check_app_health
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [nagios]
+
+# ── 3. Template the Nagios monitoring config ──────────────────────────────────
+- name: Template Nagios app monitoring config
+  ansible.builtin.template:
+    src: app.cfg.j2
+    dest: /etc/nagios4/conf.d/app.cfg
+    owner: root
+    group: nagios
+    mode: "0640"
+  notify:
+    - Restart nagios4
+  tags: [nagios]
+
+# ── 4. Create the Apache digest authentication file ───────────────────────────
+# BUG FIX B3: The original htdigest here-string approach is unreliable across
+# bash/dash versions.  We compute the MD5 hash directly using printf + md5sum.
+# WHY digest auth (not basic auth): digest sends a hash of the password, never
+# the plaintext, so it is safer on HTTP (unencrypted) connections.
+# no_log: true prevents the password from appearing in Ansible output.
+#
+# Digest format: username:realm:MD5(username:realm:password)
+- name: Create Nagios web UI login (digest auth)
+  ansible.builtin.shell: |
+    set -o pipefail
+    HASH=$(printf '%s' '{{ nagios_admin_user }}:Nagios4:{{ nagios_admin_password }}' | md5sum | cut -d' ' -f1)
+    echo "{{ nagios_admin_user }}:Nagios4:$HASH" > /etc/nagios4/htdigest.users
+    chown root:www-data /etc/nagios4/htdigest.users
+    chmod 0640 /etc/nagios4/htdigest.users
+  args:
+    executable: /bin/bash
+  no_log: true
+  changed_when: true
+  tags: [nagios]
+
+# ── 5. Enable required Apache modules ────────────────────────────────────────
+# WHY: By default Apache doesn't load cgi or auth_digest.
+# Without cgi, the Nagios web interface (CGI scripts) won't work.
+- name: Enable Apache modules
+  community.general.apache2_module:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - cgi
+    - auth_digest
+    - authz_groupfile
+  notify: Restart apache2
+  tags: [nagios]
+
+# ── 6. Configure Apache for Nagios ───────────────────────────────────────────
+- name: Enable Nagios Apache config
+  ansible.builtin.command:
+    cmd: a2enconf nagios4-cgi
+  changed_when: true
+  notify: Restart apache2
+  tags: [nagios]
+
+# ── 7. Ensure services are running ───────────────────────────────────────────
+- name: Ensure Nagios4 is running and enabled on boot
+  ansible.builtin.service:
+    name: nagios4
+    state: started
+    enabled: true
+  tags: [nagios]
+
+- name: Ensure Apache2 is running and enabled on boot
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: true
+  tags: [nagios]

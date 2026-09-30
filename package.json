@@ -1,0 +1,13 @@
+{
+  "name": "devops-demo-app",
+  "version": "1.0.0",
+  "description": "Tiny HTTP service used to demonstrate the CI/CD + IaC pipeline",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "lint": "echo 'No linter configured'"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}

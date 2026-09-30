@@ -1,0 +1,133 @@
+---
+# ansible/roles/app/tasks/main.yml
+#
+# WHY THIS ROLE EXISTS:
+# This role deploys the Node.js app to the k3s cluster using Kubernetes manifests.
+# It is intentionally separated from the k3s role so you can redeploy the app
+# without re-installing Kubernetes:
+#   ansible-playbook site.yml --tags app -e app_image=ghcr.io/you/repo:sha-abc123
+#
+# Tasks:
+#   1. (Optional) Create the GHCR image-pull secret
+#   2. Create the Kubernetes namespace
+#   3. Copy k8s manifests to the server
+#   4. Apply deployment and service manifests
+#   5. Update the image
+#   6. Patch the service to NodePort 30080  (BUG FIX B8: merge-patch, not JSON-patch)
+#   7. Wait for the rollout to complete
+
+# ── 1. (Optional) Create the GHCR image-pull secret ──────────────────────────
+# BUG FIX B6: If ghcr_pull_user and ghcr_pull_token are defined (set via
+# Ansible Vault or --extra-vars), create the ghcr-pull secret so private
+# GHCR images can be pulled.  If the package is public, set neither variable
+# and this task is skipped automatically.
+#
+# How to use:
+#   ansible-playbook site.yml --tags app \
+#     -e ghcr_pull_user=myuser \
+#     -e @ghcr_secrets.yml    # Vault-encrypted file containing ghcr_pull_token
+- name: Create GHCR image pull secret (only if ghcr_pull_user is defined)
+  ansible.builtin.command:
+    cmd: >
+      k3s kubectl create secret docker-registry ghcr-pull
+      --docker-server=ghcr.io
+      --docker-username={{ ghcr_pull_user }}
+      --docker-password={{ ghcr_pull_token }}
+      --namespace={{ app_namespace }}
+      --dry-run=client -o yaml | k3s kubectl apply -f -
+  no_log: true
+  when: ghcr_pull_user is defined and ghcr_pull_token is defined
+  changed_when: true
+  tags: [app]
+
+# ── 2. Ensure /opt/k8s directory exists ──────────────────────────────────────
+- name: Create /opt/k8s directory for manifests
+  ansible.builtin.file:
+    path: /opt/k8s
+    state: directory
+    mode: "0755"
+  tags: [app]
+
+# ── 3. Copy Kubernetes manifests to the server ────────────────────────────────
+- name: Copy k8s manifests to /opt/k8s
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../k8s/"
+    dest: /opt/k8s/
+    mode: "0644"
+  tags: [app]
+
+# ── 4. Create the Kubernetes namespace ───────────────────────────────────────
+- name: Create Kubernetes namespace {{ app_namespace }}
+  ansible.builtin.command:
+    cmd: k3s kubectl create namespace {{ app_namespace }}
+  register: app_ns_result
+  changed_when: "'created' in app_ns_result.stdout"
+  failed_when:
+    - app_ns_result.rc != 0
+    - "'already exists' not in app_ns_result.stderr"
+  tags: [app]
+
+# ── 5. Apply Deployment and Service manifests ─────────────────────────────────
+- name: Apply Deployment manifest
+  ansible.builtin.command:
+    cmd: k3s kubectl apply -n {{ app_namespace }} -f /opt/k8s/deployment.yaml
+  changed_when: true
+  tags: [app]
+
+- name: Apply Service manifest
+  ansible.builtin.command:
+    cmd: k3s kubectl apply -n {{ app_namespace }} -f /opt/k8s/service.yaml
+  changed_when: true
+  tags: [app]
+
+# ── 6. Update the container image ─────────────────────────────────────────────
+# WHY: `kubectl apply` alone won't change the image if the manifest still says :latest.
+# `kubectl set image` forces k8s to pull and run the new image.
+- name: Set the app image to {{ app_image }}
+  ansible.builtin.command:
+    cmd: >
+      k3s kubectl set image deployment/myapp
+      myapp={{ app_image }}
+      -n {{ app_namespace }}
+  changed_when: true
+  tags: [app]
+
+# ── 7. Patch Service to NodePort 30080 ────────────────────────────────────────
+# WHY: The service.yaml defines type ClusterIP (internal-only).
+# We patch it to NodePort so the app is reachable on port 30080 from outside
+# without needing a cloud load balancer.
+#
+# BUG FIX B8: The original JSON-patch used array index [0] which breaks if
+# the Service has more than one port entry.  The strategic merge-patch below
+# matches on the port name ("http") so it always targets the right port.
+# --type=merge is safer than --type=json for this use case.
+- name: Patch Service type to NodePort 30080 (merge-patch)
+  ansible.builtin.command:
+    cmd: >
+      k3s kubectl patch service myapp
+      -n {{ app_namespace }}
+      --type=merge
+      -p={"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":3000,"nodePort":{{ app_node_port }}}]}}
+  changed_when: true
+  tags: [app]
+
+# ── 8. Wait for rollout with automatic rollback on failure ────────────────────
+# WHY: If a bad image fails to start or health checks fail, the rollout times out.
+# The rescue block automatically triggers a rollout undo to restore the previous
+# working ReplicaSet, preventing prolonged downtime.
+- name: Monitor rollout and rollback on failure
+  tags: [app]
+  block:
+    - name: Wait for Deployment rollout to complete
+      ansible.builtin.command:
+        cmd: k3s kubectl rollout status deployment/myapp -n {{ app_namespace }} --timeout=180s
+      changed_when: false
+  rescue:
+    - name: Roll back Deployment to previous ReplicaSet
+      ansible.builtin.command:
+        cmd: k3s kubectl rollout undo deployment/myapp -n {{ app_namespace }}
+      changed_when: true
+
+    - name: Fail playbook with descriptive rollout failure
+      ansible.builtin.fail:
+        msg: "Deployment rollout failed within timeout. Rollback completed via 'kubectl rollout undo'."

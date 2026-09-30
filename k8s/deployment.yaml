@@ -1,0 +1,111 @@
+# k8s/deployment.yaml
+# WHY: A Deployment tells Kubernetes HOW to run the app:
+#   - How many replicas (copies) to keep alive
+#   - What Docker image to use
+#   - How to roll out updates without downtime (RollingUpdate)
+#   - How to check health (probes)
+#   - What resources the container may use (requests/limits)
+#
+# Replace OWNER/REPO with your lowercase GitHub username/repository name.
+# GHCR (GitHub Container Registry) requires lowercase image names.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+  # WHY 2 replicas: if one pod crashes, the other keeps serving traffic.
+  # Zero-downtime updates also require at least 2 replicas.
+  replicas: 2
+
+  # Keep the last 5 ReplicaSets so we can roll back to any of them.
+  revisionHistoryLimit: 5
+
+  selector:
+    matchLabels:
+      app: myapp
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable: 0 – never reduce capacity during an update.
+      # maxSurge: 1      – temporarily allow one extra pod while updating.
+      # Together: spin up the new pod first, THEN kill the old one → zero downtime.
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      # imagePullSecrets is needed if the GHCR package is private.
+      # See README Phase 4 for how to create the ghcr-pull secret.
+      # Delete this block if you make the package public.
+      imagePullSecrets:
+        - name: ghcr-pull
+
+      # Pod-level security: require all containers to run as non-root (node user is UID 1000).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      containers:
+        - name: myapp
+          # Replace OWNER/REPO with your GitHub username/repository (must be lowercase).
+          image: ghcr.io/OWNER/REPO:latest
+          ports:
+            - containerPort: 3000
+
+          # envFrom lets you inject a ConfigMap or Secret as environment variables.
+          # The configmap "myapp-config" is optional; remove this block if not used.
+          # envFrom:
+          #   - configMapRef:
+          #       name: myapp-config
+          #       optional: true
+
+          # WHY resource requests and limits?
+          # requests: minimum guaranteed resources – used for scheduling decisions.
+          # limits:   maximum allowed – container is OOM-killed if it exceeds memory.
+          resources:
+            requests:
+              cpu: "100m"      # 0.1 vCPU
+              memory: "128Mi"
+            limits:
+              cpu: "500m"      # 0.5 vCPU
+              memory: "256Mi"
+
+          # Readiness probe: Kubernetes stops sending traffic to a pod that fails this.
+          # WHY /healthz: it is fast (no DB calls) and correctly reflects app health.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Liveness probe: Kubernetes RESTARTS a pod that fails this.
+          # Use a longer initialDelaySeconds so the app has time to start.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+
+          # Container-level security hardening.
+          securityContext:
+            # Prevent the container from gaining extra Linux capabilities (e.g. sudo).
+            allowPrivilegeEscalation: false
+            # readOnlyRootFilesystem: the container cannot write to its own filesystem.
+            # WHY: prevents malware from modifying the image at runtime.
+            # NOTE: if the app needs to write temp files, mount an emptyDir volume.
+            readOnlyRootFilesystem: true
+            # Drop ALL Linux capabilities – the app only needs basic network access.
+            capabilities:
+              drop: ["ALL"]

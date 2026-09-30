@@ -1,0 +1,252 @@
+# .github/workflows/ci-cd.yml
+#
+# WHY THIS FILE EXISTS:
+# This is the heart of the CI/CD pipeline. Every push triggers automated:
+#   1. test  – lint and unit tests (runs on PRs too, so broken code never merges)
+#   2. build – builds the Docker image, pushes it to GHCR, scans it with Trivy
+#   3. deploy-staging    – deploys to the staging namespace on push to main
+#   4. deploy-production – deploys to production on a version tag (v1.2.3), needs approval
+#
+# TOOL CHOICES:
+#   - docker/buildx  : enables layer caching → faster builds
+#   - docker/metadata-action : auto-generates image tags (sha, semver, latest)
+#   - Trivy          : open-source vulnerability scanner; blocks on CRITICAL/HIGH CVEs
+#   - concurrency    : cancels a running workflow if a newer commit arrives (saves CI minutes)
+
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+    tags:     ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+# Cancel any in-progress run for the same branch/PR when a new commit arrives.
+# WHY: prevents multiple pipeline runs queueing up from rapid commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # IMAGE_NAME is always lowercase (GHCR requirement).
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 1: test
+  # Runs on every push AND every pull request – broken code never merges.
+  # ──────────────────────────────────────────────────────────────────────────
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          # Cache node_modules between runs to speed up npm ci.
+          cache: "npm"
+
+      - name: Install dependencies
+        # `npm ci` is the CI-safe alternative to `npm install`:
+        # it reads package-lock.json exactly, never updates it.
+        run: npm ci
+
+      - name: Lint (if configured)
+        # --if-present skips the step silently if no "lint" script exists.
+        run: npm run lint --if-present
+
+      - name: Run unit tests
+        run: npm test
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2: build
+  # Runs only on push events (not PRs) so we don't push untested images.
+  # ──────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build, Push & Scan
+    needs: test
+    runs-on: ubuntu-latest
+    # Skip on pull_request events (only push to main or tag push triggers a build).
+    if: github.event_name != 'pull_request'
+
+    # Required for GITHUB_TOKEN to push to GHCR.
+    permissions:
+      contents: read
+      packages: write
+      # Required for Trivy to write sarif results to the Security tab.
+      security-events: write
+
+    outputs:
+      # Pass the image digest to the deploy jobs so they pin the exact image.
+      image-digest: ${{ steps.build-push.outputs.digest }}
+      image-tags:   ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        # Buildx enables build-cache export/import (GHA cache backend).
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN is automatically provided by Actions; no setup needed.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata (tags and labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # Tag with the short git SHA for traceability (e.g. sha-abc1234).
+            type=sha,prefix=sha-,format=short
+            # Semantic version tags on v* tags (e.g. v1.2.3 → 1.2.3, 1.2, 1, latest).
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # Tag "latest" on every push to main.
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags:   ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GHA cache: reuses unchanged layers from previous runs → faster builds.
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      - name: Scan image for vulnerabilities (Trivy)
+        # Trivy scans the image for known CVEs.
+        # exit-code 1 → the workflow fails if CRITICAL or HIGH CVEs are found.
+        # WHY: we want to know about security issues BEFORE shipping to production.
+        # Pinned to commit SHA for supply-chain security; Dependabot updates it.
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+          format:    "sarif"
+          output:    "trivy-results.sarif"
+          severity:  "CRITICAL,HIGH"
+          exit-code: "1"
+
+      - name: Upload Trivy results to GitHub Security tab
+        if: always()   # Upload even if Trivy found issues (so you can see the report).
+        uses: github/codeql-action/upload-sarif@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
+        continue-on-error: true # Prevent failing the build if GitHub Advanced Security / SARIF upload is disabled or lacks permissions
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 3: deploy-staging
+  # Runs after a successful build on pushes to main.
+  #
+  # NOTE: These deploy jobs require a Kubernetes cluster reachable from the
+  # GitHub Actions runner (see README Phase 4).
+  # DEFAULT: Ansible is the primary deployer.  You can disable deploy-staging
+  # and deploy-production and use:
+  #   ansible-playbook site.yml --tags app -e app_image=ghcr.io/<you>/<repo>:<sha>
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    needs: build
+    runs-on: ubuntu-latest
+    # Ansible is the default deployer; set repository variable
+    # ENABLE_K8S_DEPLOY=true only after KUBE_CONFIG_B64 and cluster access exist.
+    if: vars.ENABLE_K8S_DEPLOY == 'true' && github.ref == 'refs/heads/main'
+    # GitHub Environment "staging" can require reviewers, branch rules, and secrets.
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        # KUBE_CONFIG_B64: base64-encoded k3s.yaml with the public IP of the app server.
+        # See README Phase 4 Option B for how to generate and store this secret.
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -n staging -f k8s/deployment.yaml -f k8s/service.yaml
+
+      - name: Update image to the new digest
+        # Using the digest (sha256:...) instead of a tag pins the EXACT image layer.
+        # This prevents "latest" from silently changing between apply and rollout.
+        run: |
+          kubectl set image deployment/myapp \
+            myapp=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }} \
+            -n staging
+
+      - name: Wait for rollout to complete
+        run: kubectl rollout status deployment/myapp -n staging --timeout=5m
+
+      - name: Roll back on failure
+        if: failure()
+        # If the rollout times out or the new pods fail their health checks,
+        # immediately restore the previous working ReplicaSet.
+        run: kubectl rollout undo deployment/myapp -n staging
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 4: deploy-production
+  # Runs only when a version tag (v1.2.3) is pushed.
+  # The "production" environment should require manual approval in GitHub.
+  #
+  # NOTE: Same cluster-reachability requirement as deploy-staging above.
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    needs: build
+    runs-on: ubuntu-latest
+    # Ansible is the default deployer; set repository variable
+    # ENABLE_K8S_DEPLOY=true only after KUBE_CONFIG_B64 and cluster access exist.
+    if: vars.ENABLE_K8S_DEPLOY == 'true' && startsWith(github.ref, 'refs/tags/v')
+    environment: production    # Requires manual approval if configured in GitHub.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -n production -f k8s/deployment.yaml -f k8s/service.yaml
+
+      - name: Update image to the new digest
+        run: |
+          kubectl set image deployment/myapp \
+            myapp=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.image-digest }} \
+            -n production
+
+      - name: Wait for rollout to complete
+        run: kubectl rollout status deployment/myapp -n production --timeout=5m
+
+      - name: Roll back on failure
+        if: failure()
+        run: kubectl rollout undo deployment/myapp -n production

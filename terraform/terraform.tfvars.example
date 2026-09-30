@@ -1,0 +1,25 @@
+# terraform/terraform.tfvars.example
+#
+# WHY THIS FILE EXISTS:
+# This is a safe, committed example of terraform.tfvars.
+# Copy it to terraform.tfvars and fill in your real values.
+# terraform.tfvars is git-ignored – NEVER commit the real file.
+#
+# Usage:
+#   cp terraform.tfvars.example terraform.tfvars
+#   # Edit terraform.tfvars with your values
+#   terraform plan
+
+# Your public IP in CIDR notation – used to restrict SSH and Nagios UI access.
+# Find your IP with:  curl ifconfig.me
+my_ip_cidr = "203.0.113.4/32"
+
+# AWS region (default is ap-south-1 / Mumbai).
+# region = "us-east-1"
+
+# Path to your SSH key pair.
+public_key_path  = "~/.ssh/id_rsa.pub"
+private_key_path = "~/.ssh/id_rsa"
+
+# Set to false to run Ansible manually after `terraform apply`.
+# run_ansible = false

@@ -1,0 +1,61 @@
+---
+# ansible/site.yml
+#
+# WHY THIS FILE EXISTS:
+# site.yml is the master playbook – the entry point for Ansible.
+# It ties together all roles and controls WHICH roles run on WHICH hosts.
+#
+# Run the full playbook:
+#   ansible-playbook site.yml
+#
+# Run only the app role (e.g. to redeploy with a new image):
+#   ansible-playbook site.yml --tags app -e app_image=ghcr.io/you/repo:sha-abc123
+#
+# Run only Puppet (apply baseline config):
+#   ansible-playbook site.yml --tags puppet
+#
+# Dry run (no changes made):
+#   ansible-playbook site.yml --check
+
+# ── Play 1: Wait for SSH connectivity ──────────────────────────────────────
+# WHY: EC2 instances take 30-60s to boot and start sshd. Rather than hard-coding
+# a sleep in Terraform local-exec, wait_for_connection polls until SSH responds.
+- name: Wait for servers to become reachable
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH connection
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+# ── Play 2: Common baseline for ALL servers ────────────────────────────────
+- name: Apply common baseline to all hosts
+  hosts: all
+  tags: [common]
+  roles:
+    - common   # Package updates, SSH hardening, chrony time sync
+
+# ── Play 3: Puppet agent – standalone apply on all servers ────────────────
+# BUG FIX B7: Puppet was not connected to the actual servers.
+# This play installs puppet-agent and runs puppet apply in standalone mode.
+# For the master/agent lab (Practical 5), see README Phase 7b.
+- name: Install puppet-agent and apply baseline manifest
+  hosts: all
+  tags: [puppet]
+  roles:
+    - puppet_agent   # Installs puppet-agent, copies manifests, runs puppet apply
+
+# ── Play 4: App server – Kubernetes + application ─────────────────────────
+- name: Install k3s and deploy the application
+  hosts: app
+  tags: [app]
+  roles:
+    - k3s   # Installs single-node Kubernetes (k3s)
+    - app   # Deploys the Docker image via Kubernetes manifests
+
+# ── Play 5: Monitor server – Nagios Core ──────────────────────────────────
+- name: Install and configure Nagios monitoring
+  hosts: monitor
+  tags: [monitor]
+  roles:
+    - nagios_server   # Installs Nagios4, custom plugin, and monitoring config

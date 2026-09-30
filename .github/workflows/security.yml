@@ -1,0 +1,83 @@
+# .github/workflows/security.yml
+#
+# WHY THIS FILE EXISTS:
+# Two additional security scans run on every push and weekly:
+#   1. CodeQL  – static analysis for JavaScript vulnerabilities in server.js
+#   2. Gitleaks – scans git history for accidentally committed secrets
+#              (API keys, passwords, tokens, private keys)
+#
+# WHY separate from ci-cd.yml: security scans have different triggers
+# (CodeQL also runs on schedule) and different permissions.
+
+name: Security Scans
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Run weekly so newly discovered vulnerabilities in unchanged code are caught.
+  schedule:
+    - cron: '0 2 * * 1'   # Every Monday at 02:00 UTC
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 1: CodeQL
+  # Static analysis for JavaScript security vulnerabilities.
+  # WHY: CodeQL finds common issues like SQL injection, XSS, prototype pollution
+  #      that can exist in Node.js code even without obvious syntax errors.
+  # ──────────────────────────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions:       read
+      contents:      read
+      security-events: write   # Required to upload SARIF results
+
+    steps:
+      - name: Checkout code
+        # D4: Pinned to v4 (major version tag – stable API)
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        # Pinned to commit SHA for supply-chain security; Dependabot updates it.
+        uses: github/codeql-action/init@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
+        with:
+          # javascript covers both JavaScript and TypeScript.
+          languages: javascript
+
+      - name: Auto-build (for compiled languages – harmless for JS)
+        uses: github/codeql-action/autobuild@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@1190a975f95ce23525efb6a3fc21ea29567c1b52 # v3
+        with:
+          category: "/language:javascript"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2: Gitleaks
+  # Scans the git history for secrets (API keys, tokens, passwords).
+  # WHY: A secret committed even once and then deleted is still in the history.
+  # Gitleaks scans the full git log, not just the current files.
+  # ──────────────────────────────────────────────────────────────────────────
+  gitleaks:
+    name: Gitleaks Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code (with full history for Gitleaks)
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 fetches the entire git history.
+          # WHY: Gitleaks must scan all commits, not just the latest.
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        # Pinned to commit SHA for supply-chain security; Dependabot updates it.
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

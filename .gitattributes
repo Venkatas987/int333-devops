@@ -1,0 +1,37 @@
+# .gitattributes
+# WHY: This file tells Git how to handle line endings for different file types.
+# Without it, Windows Git clients check out files with CRLF line endings,
+# which breaks Bash scripts (the shell reads the \r as part of the command)
+# and causes `puppet parser validate` to fail.
+#
+# `text=auto` lets Git normalize line endings in the index.
+# `eol=lf` forces Unix line endings (LF only) for scripts and config files.
+
+* text=auto
+
+# Shell scripts – MUST use LF or the shebang line breaks on Linux.
+*.sh text eol=lf
+
+# YAML / Ansible / Kubernetes – parsers on Linux expect LF.
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Terraform HCL
+*.tf  text eol=lf
+*.tpl text eol=lf
+
+# Jinja2 templates (Ansible)
+*.j2 text eol=lf
+
+# Puppet manifests and templates
+*.pp  text eol=lf
+*.epp text eol=lf
+
+# Ruby (Puppet custom functions)
+*.rb text eol=lf
+
+# Dockerfile
+Dockerfile text eol=lf
+
+# Markdown files
+*.md text eol=lf

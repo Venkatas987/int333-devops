@@ -1,0 +1,22 @@
+<%- |
+  String $hostname,
+  String $env_label,
+  String $os_name,
+  String $os_release,
+  Integer $memory_mb,
+  Integer $cpu_count,
+| -%>
+# /etc/motd
+# This file is managed by Puppet. Manual edits will be overwritten.
+# To change this message, edit: puppet/modules/baseline/templates/motd.epp
+
+================================================================================
+  <%= $hostname %> [<%= $env_label %>]
+================================================================================
+  OS      : <%= $os_name %> <%= $os_release %>
+  Memory  : <%= $memory_mb %> MB
+  CPUs    : <%= $cpu_count %>
+
+  This server is managed by Puppet (baseline module).
+  Any manual changes to managed files will be corrected on the next agent run.
+================================================================================

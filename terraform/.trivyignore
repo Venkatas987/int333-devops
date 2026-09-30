@@ -1,0 +1,16 @@
+# terraform/.trivyignore
+#
+# WHY THIS FILE EXISTS:
+# Trivy scans Terraform configs for security misconfigurations.
+# Some findings are ACCEPTED for a demo/lab environment.
+# Each entry must have a comment explaining why it is accepted.
+# In a production environment, these should be fixed properly.
+#
+# To see all findings including ignored ones, run:
+#   trivy config --ignorefile "" terraform/
+
+# AVD-AWS-0104 / AWS-0104: Security group allows egress to 0.0.0.0/0 (all outbound).
+# ACCEPTED: Servers need to reach apt repos, GitHub, GHCR, AWS APIs.
+# In production: restrict to specific CIDRs/prefixes.
+AVD-AWS-0104
+AWS-0104

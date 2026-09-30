@@ -1,0 +1,32 @@
+# ansible/group_vars/all.yml
+#
+# WHY THIS FILE EXISTS:
+# Variables in group_vars/all.yml are available to every host in every play.
+# This is the single source of truth for shared configuration values.
+# Sensitive values (passwords) should be encrypted with Ansible Vault:
+#   ansible-vault encrypt_string 'MyStrongPass' --name nagios_admin_password
+
+# ── Application ───────────────────────────────────────────────────────────────
+# The Docker image to deploy.
+# Replace OWNER/REPO with your lowercase GitHub username/repository name.
+# This is updated by the CI pipeline: --extra-vars "app_image=ghcr.io/.../...:sha-abc123"
+app_image: "ghcr.io/OWNER/REPO:latest"
+
+# Environment name (staging/production). Set by Terraform workspace via inventory.tpl.
+env_name: "staging"
+
+# Kubernetes namespace where the app runs.
+app_namespace: "staging"
+
+# The Kubernetes NodePort that exposes the app to the outside world.
+# Port 30080 is in the valid NodePort range (30000-32767).
+app_node_port: 30080
+
+# ── Nagios ────────────────────────────────────────────────────────────────────
+nagios_admin_user: "nagiosadmin"
+
+# IMPORTANT: Replace this placeholder with a real password.
+# Encrypt it with Ansible Vault before committing:
+#   ansible-vault encrypt_string 'YourRealPassword' --name nagios_admin_password
+# Then run: ansible-playbook site.yml --ask-vault-pass
+nagios_admin_password: "ChangeMe123!"  # <-- Replace and encrypt with Vault!

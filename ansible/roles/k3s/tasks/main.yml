@@ -1,0 +1,43 @@
+---
+# ansible/roles/k3s/tasks/main.yml
+#
+# WHY THIS ROLE EXISTS:
+# k3s is a lightweight, production-ready Kubernetes distribution from Rancher.
+# It is ideal for single-node setups (like a student EC2 instance) because it
+# installs everything with a single script and uses only ~512 MB of RAM.
+#
+# This role:
+#   1. Downloads and runs the official k3s install script.
+#   2. Waits until the node is Ready before returning.
+
+# ── 1. Install k3s ────────────────────────────────────────────────────────────
+# WHY creates: – Ansible's idempotency check. If /usr/local/bin/k3s already exists,
+# the download is skipped. This prevents re-installing k3s on every Ansible run.
+- name: Install k3s via the official install script
+  ansible.builtin.shell:
+    cmd: set -o pipefail && curl -sfL https://get.k3s.io | sh -
+    creates: /usr/local/bin/k3s
+    executable: /bin/bash
+  tags: [k3s]
+  # noqa: command-instead-of-module risky-shell-pipe
+
+# ── 2. Ensure k3s service is started ─────────────────────────────────────────
+- name: Ensure k3s service is started and enabled on boot
+  ansible.builtin.service:
+    name: k3s
+    state: started
+    enabled: true
+  tags: [k3s]
+
+# ── 3. Wait for node Ready ────────────────────────────────────────────────────
+# WHY: k3s takes ~60 seconds to start all control-plane components.
+# The app role's `kubectl apply` would fail if k3s is not fully ready.
+- name: Wait until the k3s node is Ready
+  ansible.builtin.command:
+    cmd: k3s kubectl get node
+  register: k3s_node_status
+  until: "'Ready' in k3s_node_status.stdout"
+  retries: 20
+  delay: 15
+  changed_when: false   # This is a read-only check; don't count it as a change.
+  tags: [k3s]

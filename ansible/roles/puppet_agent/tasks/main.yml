@@ -1,0 +1,113 @@
+---
+# ansible/roles/puppet_agent/tasks/main.yml
+#
+# WHY THIS ROLE EXISTS (BUG FIX B7):
+# Puppet was defined in the project but never connected to the actual servers.
+# This role installs puppet-agent on every server and runs `puppet apply`
+# in standalone mode (no master needed) using the manifests in this repo.
+#
+# WHY standalone (puppet apply) not master/agent:
+# The master/agent setup (Practical 5 in INT333) requires two VMs and
+# certificate management – that's done separately in the lab.
+# This role gives you puppet apply on real EC2 instances so you can
+# demonstrate drift correction during a viva without a separate master.
+#
+# Tasks:
+#   1. Add the official Puppet 8 apt repository
+#   2. Install puppet-agent
+#   3. Copy the manifests and modules to /opt/puppet-demo/
+#   4. Run puppet apply (idempotent – safe to re-run)
+
+# ── 1. Add the Puppet apt repository ─────────────────────────────────────────
+# WHY: Ubuntu's default repos ship an older version of Puppet.
+# The official Puppet repo guarantees we get Puppet 8 (matching the course).
+- name: Download Puppet 8 release package
+  ansible.builtin.get_url:
+    url: "https://apt.puppet.com/puppet8-release-{{ ansible_distribution_release }}.deb"
+    dest: /tmp/puppet8-release.deb
+    mode: "0644"
+  tags: [puppet]
+
+- name: Install Puppet 8 release package (adds the apt repo)
+  ansible.builtin.apt:
+    deb: /tmp/puppet8-release.deb
+    lock_timeout: 180
+  tags: [puppet]
+
+- name: Update apt cache after adding Puppet repo
+  ansible.builtin.apt:
+    update_cache: true
+    lock_timeout: 180
+  tags: [puppet]
+
+# ── 2. Install puppet-agent ───────────────────────────────────────────────────
+- name: Install puppet-agent
+  ansible.builtin.apt:
+    name: puppet-agent
+    state: present
+    lock_timeout: 180
+  tags: [puppet]
+
+# ── 3. Copy manifests and modules to /opt/puppet-demo ────────────────────────
+# WHY: We don't want to overwrite /etc/puppetlabs (the system location).
+# /opt/puppet-demo is our demo directory – safe to delete and recreate.
+- name: Create /opt/puppet-demo directory structure
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/puppet-demo
+    - /opt/puppet-demo/manifests
+    - /opt/puppet-demo/modules
+  tags: [puppet]
+
+- name: Copy Puppet manifests
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../puppet/manifests/"
+    dest: /opt/puppet-demo/manifests/
+    mode: "0644"
+  tags: [puppet]
+
+- name: Copy Puppet modules (baseline)
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../puppet/modules/"
+    dest: /opt/puppet-demo/modules/
+    mode: preserve
+  tags: [puppet]
+
+# ── 4. Run puppet apply ───────────────────────────────────────────────────────
+# WHY --noop first: shows what Puppet WOULD change without actually changing it.
+# The second run (without --noop) applies the changes for real.
+# WHY idempotent: running puppet apply twice produces the same result as once.
+# You can demonstrate drift correction by deleting /etc/motd and re-running.
+- name: Run puppet apply (apply baseline config)
+  ansible.builtin.command:
+    cmd: >
+      /opt/puppetlabs/bin/puppet apply
+      --detailed-exitcodes
+      --modulepath=/opt/puppet-demo/modules
+      /opt/puppet-demo/manifests/site.pp
+  register: puppet_agent_result
+  # Puppet exits 0 (no changes) or 2 (changes made) – both are success.
+  # Exit 1 or 4 means an error.
+  failed_when: puppet_agent_result.rc not in [0, 2]
+  changed_when: puppet_agent_result.rc == 2
+  tags: [puppet]
+
+- name: Show puppet apply output
+  ansible.builtin.debug:
+    msg: "{{ puppet_agent_result.stdout_lines }}"
+  tags: [puppet]
+
+# ── 5. Setup periodic drift correction (runs every 30 minutes) ──────────────
+# WHY: In a masterless setup, configuration drift occurs if files are manually
+# altered after the initial Ansible run. A cron job running puppet apply every
+# 30 minutes ensures baseline settings (e.g. /etc/motd, users) are enforced continuously.
+- name: Configure cron job for periodic puppet apply (drift correction)
+  ansible.builtin.cron:
+    name: "puppet-drift-correction"
+    minute: "*/30"
+    user: root
+    job: "/opt/puppetlabs/bin/puppet apply --detailed-exitcodes --modulepath=/opt/puppet-demo/modules /opt/puppet-demo/manifests/site.pp >/dev/null 2>&1"
+  tags: [puppet]

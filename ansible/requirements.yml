@@ -1,0 +1,14 @@
+---
+# ansible/requirements.yml
+#
+# WHY THIS FILE EXISTS:
+# Declares Ansible collection dependencies required for extended modules
+# (e.g., community.general, ansible.posix).
+# Install with: ansible-galaxy collection install -r ansible/requirements.yml
+# or via: make deps
+
+collections:
+  - name: community.general
+    version: ">=8.0.0"
+  - name: ansible.posix
+    version: ">=1.5.0"

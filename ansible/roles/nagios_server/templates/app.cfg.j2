@@ -1,0 +1,125 @@
+# ansible/roles/nagios_server/templates/app.cfg.j2
+#
+# WHY THIS FILE EXISTS:
+# Nagios reads its configuration from .cfg files.
+# This Jinja2 template generates the Nagios config for monitoring the app server.
+# Ansible renders it with the real server IP and places it in /etc/nagios4/conf.d/.
+#
+# Concepts:
+#   command – defines HOW to run a check (what plugin, what arguments).
+#   host    – defines WHAT to monitor (an IP address with a display name).
+#   service – links a host to a command and sets check frequency and alert thresholds.
+#
+# BUG FIX B1: Use private_ip (VPC-internal) instead of ansible_host (public IP).
+# WHY: Nagios runs on the monitor server inside the same VPC as the app server.
+# Using the private IP avoids routing traffic via the internet, is free (no data
+# transfer cost), and works even if the public IP changes after a reboot.
+
+# ── Custom command definitions ─────────────────────────────────────────────────
+# check_app_http: uses the standard check_http plugin to verify the /healthz endpoint.
+define command {
+    command_name    check_app_http
+    command_line    $USER1$/check_http -H $ARG1$ -p $ARG2$ -u /healthz -s '{"status":"ok"}'
+}
+
+# check_app_health: uses our custom Bash plugin (check_app_health.sh).
+# -w 0.5 = WARNING if response time > 0.5s
+# -c 2   = CRITICAL if response time > 2s
+define command {
+    command_name    check_app_health
+    command_line    $USER1$/check_app_health -H $ARG1$ -p $ARG2$ -w 0.5 -c 2
+}
+
+# ── Host definition ────────────────────────────────────────────────────────────
+# BUG FIX B1: address uses private_ip (set by Terraform via inventory.tpl).
+# hostvars[groups['app'][0]] retrieves the Ansible host variables for app1.
+define host {
+    use                     linux-server
+    host_name               app1
+    alias                   DevOps Demo App Server
+    address                 {{ hostvars[groups['app'][0]]['private_ip'] }}
+    check_period            24x7
+    max_check_attempts      3
+    check_interval          5
+    retry_interval          1
+    check_command           check-host-alive
+    notification_interval   60
+    notification_period     24x7
+    contact_groups          admins
+}
+
+# ── Service definitions ────────────────────────────────────────────────────────
+# WHY 4 services: each measures a different failure mode.
+#
+# 1. PING – is the host reachable on the network?
+# 2. SSH  – can we log into it? (tests the SSH daemon)
+# 3. App HTTP /healthz – is the app process running and responding?
+# 4. App response time – is the app fast enough? (performance SLO)
+
+# Service 1: PING
+# Uses the private IP (set as host address above) – requires the ICMP self-rule
+# added to the AWS security group in B1.
+define service {
+    use                     generic-service
+    host_name               app1
+    service_description     PING
+    check_command           check_ping!100.0,20%!500.0,60%
+    check_period            24x7
+    max_check_attempts      4
+    check_interval          5
+    retry_interval          1
+    notification_interval   60
+    notification_period     24x7
+    contact_groups          admins
+}
+
+# Service 2: SSH
+# Uses the private IP and requires the SSH self-rule added in B1.
+define service {
+    use                     generic-service
+    host_name               app1
+    service_description     SSH
+    check_command           check_ssh
+    check_period            24x7
+    max_check_attempts      4
+    check_interval          5
+    retry_interval          1
+    notification_interval   60
+    notification_period     24x7
+    contact_groups          admins
+}
+
+# Service 3: App HTTP /healthz
+# WHY: This directly tests whether the Node.js app is alive.
+# Nagios checks GET /healthz on port {{ app_node_port }} and expects 200 + {"status":"ok"}.
+define service {
+    use                     generic-service
+    host_name               app1
+    service_description     App HTTP /healthz
+    check_command           check_app_http!{{ hostvars[groups['app'][0]]['private_ip'] }}!{{ app_node_port }}
+    check_period            24x7
+    max_check_attempts      4
+    check_interval          5
+    retry_interval          1
+    notification_interval   60
+    notification_period     24x7
+    contact_groups          admins
+}
+
+# Service 4: App response time (uses custom plugin with perfdata)
+# WHY: The custom plugin returns performance data (time=Xs;warn;crit;0) so
+# Nagios can graph response time over time and alert on slow responses.
+define service {
+    use                     generic-service
+    host_name               app1
+    service_description     App response time
+    check_command           check_app_health!{{ hostvars[groups['app'][0]]['private_ip'] }}!{{ app_node_port }}
+    check_period            24x7
+    max_check_attempts      4
+    check_interval          5
+    retry_interval          1
+    notification_interval   60
+    notification_period     24x7
+    contact_groups          admins
+}
+

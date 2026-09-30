@@ -1,0 +1,38 @@
+# k8s/ingress.yaml
+# WHY: An Ingress routes HTTP traffic from outside the cluster to internal Services.
+# It acts like a reverse proxy / load balancer managed by Kubernetes.
+#
+# IMPORTANT – k3s ships with Traefik, NOT nginx.
+# This file uses ingressClassName: nginx for compatibility with standard nginx deployments.
+# On k3s you have two options:
+#   a) Install the nginx ingress controller: kubectl apply -f https://raw.githubusercontent.com/
+#      kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+#   b) Use Traefik (the k3s default) – change ingressClassName to "traefik".
+# The Ansible role bypasses Ingress entirely and uses NodePort 30080 instead.
+# This file is here for completeness and standard-cluster use.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+  annotations:
+    # Redirect HTTP → HTTPS automatically (uncomment if TLS is configured).
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+spec:
+  # Which ingress controller should handle this Ingress.
+  ingressClassName: nginx
+
+  rules:
+    - host: myapp.example.com    # Replace with your actual domain name.
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: myapp
+                port:
+                  number: 80

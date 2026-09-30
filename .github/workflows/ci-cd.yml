@@ -134,7 +134,7 @@ jobs:
         # exit-code 1 → the workflow fails if CRITICAL or HIGH CVEs are found.
         # WHY: we want to know about security issues BEFORE shipping to production.
         # Pinned to commit SHA for supply-chain security; Dependabot updates it.
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
           format:    "sarif"

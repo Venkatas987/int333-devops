@@ -17,7 +17,7 @@ terraform {
     # AWS provider – manages all AWS resources (EC2, security groups, key pairs, etc.)
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.66"
     }
     # local provider – writes the Ansible inventory file to the filesystem.
     local = {

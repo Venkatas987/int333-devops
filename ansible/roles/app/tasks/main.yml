@@ -119,7 +119,7 @@
       k3s kubectl patch service myapp
       -n {{ app_namespace }}
       --type=merge
-      -p={"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":3000,"nodePort":{{ app_node_port }}}]}}
+      -p='{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":3000,"nodePort":{{ app_node_port }}}]}}'
   changed_when: true
   tags: [app]
 

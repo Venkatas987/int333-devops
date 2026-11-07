@@ -542,6 +542,4 @@ MIT
 
 ## Live Demo
 
-- Live Application: http://13.63.176.161:30080/
-- Health Check: http://13.63.176.161:30080/healthz
-- Status Dashboard: http://13.63.176.161:30080/dashboard
+Live demo taken down to avoid cost; see [docs/screenshots/](docs/screenshots/).

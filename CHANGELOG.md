@@ -1,6 +1,20 @@
 # CHANGELOG.md
 
-All changes made by the AI agent (Antigravity) to build this repository from scratch.
+All changes made by the AI agent (Antigravity) to build and finalize this repository.
+
+---
+
+## [1.1.0] — 2026-11-08
+
+### Added
+- **Read-Only Status Dashboard**: Added `/dashboard`, `/dashboard.css`, `/dashboard.js`, and `/api/status` routes directly in `server.js` without any external npm packages or filesystem writes. Features client-side health checks, pod load-balancing indicator, light/dark mode support, and strict `Content-Security-Policy: default-src 'self'`.
+- **Unit Test Suite Expansion**: Added unit tests in `test/server.test.js` (total 7 tests, 100% pass) testing `/api/status` secret isolation, `/dashboard` security headers (CSP, nosniff, no-store), static asset delivery, and method guard (POST returns 405).
+- **Deployment Verification Script**: Created `scripts/verify_deployment.sh` for non-destructive live verification of EC2 app server endpoints and load balancing.
+- **Screenshot Documentation**: Added comprehensive screenshot capture guide in `docs/screenshots/README.md`.
+
+### Fixed
+- **Ansible APP_VERSION Synchronization**: Added task setting `APP_VERSION` from the deployed image tag so the status dashboard reflects the exact deployed version.
+- **Scope Alignment & Cleanup**: Removed unrequested enterprise components (Prometheus manifest, Grafana manifest, Argo CD directory, AWS ALB module and references) to maintain strict alignment with the 7 core project technologies.
 
 ---
 

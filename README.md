@@ -40,8 +40,41 @@ and designed to be a strong CV / portfolio project.
 | Continuous Monitoring | Host, service and app health checks, alerts, web UI via internal VPC IP | Nagios Core + custom plugin |
 | Delivery & Rollback | Rolling updates; rollback via Ansible rescue block and gated GitHub deploy jobs | Kubernetes (k3s) |
 
-**The app** is a tiny Node.js HTTP service (`server.js`) with `GET /` and `GET /healthz`. It is intentionally simple so the
-focus stays on the DevOps toolchain around it (no runtime npm dependencies).
+**The app** is a lightweight Node.js HTTP service (`server.js`) exposing `GET /` (application metadata), `GET /healthz` (health check used by Kubernetes probes and Nagios), and `GET /api/status` (read-only runtime status metrics). It has zero runtime npm dependencies.
+
+### Application Endpoints & Status Dashboard
+
+The application provides read-only HTTP endpoints and a built-in browser status dashboard:
+
+| Route | Method | Content-Type | Purpose |
+|---|---|---|---|
+| `/healthz` | GET | `application/json` | Health check polled by Kubernetes readiness/liveness probes and Nagios Core (`{"status":"ok"}`). |
+| `/api/status` | GET | `application/json` | Read-only runtime statistics (`app`, `version`, `host`, `uptimeSeconds`, `memoryRssMb`, `nodeVersion`, `platform`). Contains NO secrets, environment variables, or private IPs. |
+| `/dashboard` | GET | `text/html` | Responsive browser dashboard featuring a prominent HEALTHY/DOWN badge, system info cards, 5-second auto-refresh, and pod indicator demonstrating Kubernetes load balancing. Protected by strict Content-Security-Policy (`default-src 'self'`) and `Cache-Control: no-store`. |
+| `/dashboard.css` | GET | `text/css` | Self-contained styling with light and dark mode support via `prefers-color-scheme` (no external CDNs). |
+| `/dashboard.js` | GET | `application/javascript` | Client script updating values strictly using `textContent` (no `innerHTML`), polling `/healthz` and `/api/status`. |
+| `/` | GET | `application/json` | Root service metadata (`app`, `version`, `host`). |
+
+> [!NOTE]
+> The built-in status dashboard is a read-only browser interface designed for quick status checks and live demonstrations. **Nagios Core** remains the production infrastructure and application monitoring engine.
+
+---
+
+### Automated vs. Manual Operations
+
+Understanding what is automated versus manual is essential for technical interviews and audits:
+
+| Operation | Mode | Mechanism |
+|---|---|---|
+| **Unit Testing & Linting** | Automated | GitHub Actions (`test` job in `ci-cd.yml` on push/PR) |
+| **Docker Build & Image Push** | Automated | GitHub Actions (`build` job using buildx and GHCR login) |
+| **Vulnerability Scanning** | Automated | Trivy action in `ci-cd.yml` scanning the built container image |
+| **Static Security & Secrets** | Automated | CodeQL (SAST) and Gitleaks (secret detection) in `security.yml` |
+| **Configuration Drift Correction** | Automated | Masterless Puppet runs every 30 minutes via root cron on both EC2 servers |
+| **Continuous Health & Latency Monitoring**| Automated | Nagios Core polling HTTP `/healthz`, latency, SSH, and ICMP ping every 5 min |
+| **Kubernetes Deployment Auto-Rollback** | Automated | Ansible `block`/`rescue` triggers `k3s kubectl rollout undo` on rollout failure |
+| **AWS Infrastructure Provisioning** | Manual | Executed manually from operator laptop using `terraform apply` |
+| **Server Configuration & App Deployment** | Manual | Executed manually from operator laptop using `ansible-playbook site.yml` |
 
 ---
 
@@ -355,6 +388,23 @@ cd terraform && terraform destroy
 
 ## 7. Verification checklist
 
+### Reproducing All Validation Tests Locally
+
+Run individual component validations across all 7 core technologies:
+
+| Technology | Validation Command |
+|---|---|
+| **Node.js App** | `npm test` |
+| **GitHub Actions** | `actionlint .github/workflows/*.yml` |
+| **Kubernetes** | `kubeconform -summary -verbose k8s/*.yaml` |
+| **Terraform** | `cd terraform && terraform fmt -check -recursive && terraform validate` |
+| **Ansible** | `ansible-playbook -i "localhost," --syntax-check ansible/site.yml && ansible-lint ansible/site.yml` |
+| **Puppet** | `puppet parser validate puppet/manifests/site.pp puppet/modules/baseline/manifests/init.pp && puppet-lint puppet/` |
+| **Nagios Plugin** | `bash scripts/test_plugin.sh` and `shellcheck nagios/plugins/check_app_health.sh` |
+| **Docker Container** | `docker build -t devops-demo:local . && docker run --rm -p 3000:3000 devops-demo:local` |
+
+### Manual Verification Checklist
+
 - [ ] `npm test` passes locally and in GitHub Actions
 - [ ] Docker image builds; container serves `/healthz` and runs as non-root
 - [ ] Image is visible in GHCR, Trivy scan passes
@@ -489,7 +539,9 @@ To showcase this project effectively to recruiters and interviewers, collect and
 
 ## License
 MIT
- ## Live Demo
+
+## Live Demo
 
 - Live Application: http://13.63.176.161:30080/
 - Health Check: http://13.63.176.161:30080/healthz
+- Status Dashboard: http://13.63.176.161:30080/dashboard

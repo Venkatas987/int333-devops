@@ -77,3 +77,25 @@ This directory holds visual verification artifacts demonstrating the working end
   2. Deletion of `/etc/motd` (`sudo rm -f /etc/motd`)
   3. Catalog re-application (`puppet apply ...`) returning exit code `2`
   4. Immediate restoration of `/etc/motd`
+
+### 10. Status Dashboard — Healthy State (`10_dashboard_healthy.png`)
+- **What to capture:** Browser visiting `http://<app-public-ip>:30080/dashboard`.
+- **Key elements to highlight:**
+  - Big green "HEALTHY" badge
+  - "Served by pod <pod_name>" line
+  - Status cards displaying Pod Name, App Version, Uptime, Memory (RSS), Node.js Runtime, OS Platform, Last Updated
+  - Footer: "Deployed with GitHub Actions, Docker, Terraform, Ansible, k3s, Puppet and Nagios"
+
+### 11. Status Dashboard — Failure State (`11_dashboard_down.png`)
+- **What to capture:** Browser on `/dashboard` during the simulated failure (`kubectl scale deploy/myapp --replicas=0 -n staging`).
+- **Key elements to highlight:**
+  - Badge dynamically transitions to red "DOWN" badge via client-side fetch failure on `/healthz`.
+
+### 12. Kubernetes Load Balancing Multi-Pod Verification (`12_dashboard_pod_toggle.png`)
+- **What to capture:** Two browser windows or side-by-side refreshes showing:
+  - "Served by pod" alternating between the two running Kubernetes replicas (`myapp-...-1` and `myapp-...-2`), proving Kubernetes Service round-robin load distribution.
+
+### 13. Nagios Alert & Recovery Cycle (`13_nagios_failure_recovery.png`)
+- **What to capture:** Nagios web UI displaying:
+  - Red `CRITICAL` state for `App HTTP /healthz` and `App response time` when replicas=0
+  - Automatic return to green `OK` state when replicas are restored to 2.

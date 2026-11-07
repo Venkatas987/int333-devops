@@ -124,6 +124,23 @@ Suppose you fix a bug in `server.js` and push to GitHub. Here is exactly what ha
 
 ---
 
+## (c2) Application Status Dashboard & Endpoints
+
+To provide visibility into the running container and demonstrate Kubernetes load balancing during technical interviews, the application includes a built-in read-only status dashboard:
+
+| Endpoint | Method | Content Type | Behavior |
+|---|---|---|---|
+| `/healthz` | GET | `application/json` | Core health check returning `{"status":"ok"}`. Polled by Kubernetes probes and Nagios Core. |
+| `/api/status` | GET | `application/json` | Read-only runtime stats: `app`, `version`, `host` (pod name), `uptimeSeconds`, `memoryRssMb`, `nodeVersion`, `platform`. Explicitly filters out environment variables, secrets, and internal IP paths. |
+| `/dashboard` | GET | `text/html` | Browser interface with a prominent HEALTHY/DOWN badge, cards for system metrics, and a "Served by pod <name>" banner that updates dynamically to demonstrate Kubernetes Service round-robin balancing between the two replicas. Secured with `Content-Security-Policy: default-src 'self'`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. |
+| `/dashboard.css` | GET | `text/css` | Self-contained styles supporting light and dark modes via `prefers-color-scheme`. |
+| `/dashboard.js` | GET | `application/javascript` | Client script executing safe DOM text mutations (`textContent` only, zero `innerHTML`) and auto-refreshing every 5 seconds. |
+
+> [!NOTE]
+> The `/dashboard` endpoint is a lightweight, read-only visualization for human inspection. Infrastructure health, threshold alerting, and performance tracking remain strictly managed by **Nagios Core**.
+
+---
+
 ## (d) Push vs Pull - everyday analogy
 
 ### Push model (Terraform, Ansible, GitHub Actions)

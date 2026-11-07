@@ -50,7 +50,7 @@ This directory holds visual verification artifacts demonstrating the working end
 - **Key elements to highlight:**
   - 2 running Pods (`myapp-*`)
   - Service `myapp` with type `NodePort` mapping port 80 to `30080`
-  - HorizontalPodAutoscaler `myapp-hpa` configured with min 2, max 6 replicas
+  - Deployment maintaining 2 healthy replicas with zero restarts
 
 ### 7. Live Application Endpoint (`07_app_healthz_response.png`)
 - **What to capture:** Browser or curl command hitting the live application:

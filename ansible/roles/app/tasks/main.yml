@@ -92,6 +92,18 @@
   changed_when: true
   tags: [app]
 
+# ── 6b. Set application version environment variable ──────────────────────────
+# Updates the APP_VERSION environment variable on the deployment to match the image tag
+# so that the status dashboard displays the active deployed version tag.
+- name: Set APP_VERSION environment variable
+  ansible.builtin.command:
+    cmd: >
+      k3s kubectl set env deployment/myapp
+      APP_VERSION={{ app_image.split(':')[-1] }}
+      -n {{ app_namespace }}
+  changed_when: true
+  tags: [app]
+
 # ── 7. Patch Service to NodePort 30080 ────────────────────────────────────────
 # WHY: The service.yaml defines type ClusterIP (internal-only).
 # We patch it to NodePort so the app is reachable on port 30080 from outside

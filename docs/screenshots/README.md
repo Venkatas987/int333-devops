@@ -1,101 +1,89 @@
 # Project Evidence & Screenshots Guide
 
-This directory holds visual verification artifacts demonstrating the working end-to-end DevOps pipeline for INT333 grading and portfolio presentation. Replace the placeholder descriptions below with actual screenshots captured from your deployments.
+This directory holds visual verification artifacts demonstrating the working end-to-end DevOps pipeline for INT333 grading and portfolio presentation.
 
 > [!CAUTION]
-> **No Secrets Rule**: Before capturing and committing any screenshot, ensure that sensitive information (AWS Account IDs, secret access keys, private SSH keys, password hashes, and personal tokens) is blurred or omitted.
+> **No Secrets Rule**: Before capturing and committing any screenshot, ensure that sensitive information (AWS Account IDs, secret access keys, private SSH keys, password hashes, and personal IP addresses) is blurred or omitted.
 
 ---
 
-## Required Submission Screenshots Checklist
+## Verified Live Deployment Details
 
-### 1. GitHub Actions Workflows (`01_github_actions_ci_cd.png`)
-- **What to capture:** The GitHub Actions tab showing a green workflow run on the `main` branch.
-- **Key elements to highlight:**
-  - `test` job (passed `npm ci` and `node --test`)
-  - `build` job (Docker multi-stage build, push to GHCR, and clean Trivy container scan)
-  - `deploy-staging` / `deploy-production` skipped or green (gated by `vars.ENABLE_K8S_DEPLOY`)
+- **AWS Region:** `eu-north-1` (Stockholm)
+- **Kubernetes (k3s) Namespace:** `staging`
+- **Application Deployment:** `myapp` (2 fixed replicas, zero restarts)
+- **Container Image:** `ghcr.io/venkatas987/int333-devops:sha-ac61325`
+- **APP_VERSION:** `sha-ac61325`
+- **Service Type & Port:** `NodePort 30080`
+- **Application Routes:**
+  - `GET /`: App metadata
+  - `GET /healthz`: JSON health status probe (`{"status":"ok"}`)
+  - `GET /api/status`: Read-only JSON runtime status and metrics
+  - `GET /dashboard`: Read-only HTML status dashboard with strict CSP headers
+- **Monitoring:** Nagios Core 4 on `mon1` monitoring `app1` via private VPC IP
 
-### 2. GitHub Container Registry (`02_ghcr_package.png`)
-- **What to capture:** GitHub Packages page for the repository.
-- **Key elements to highlight:**
-  - Published package `int333` under GitHub Packages
-  - Image tags: `sha-<commit_sha>` and `latest`
-  - Package visibility set to Public (or imagePullSecrets configured)
+---
 
-### 3. Security Workflows (`03_security_scans.png`)
-- **What to capture:** Execution run of `.github/workflows/security.yml`.
-- **Key elements to highlight:**
-  - CodeQL JavaScript static analysis completing with 0 security alerts
-  - Gitleaks git history scan passing with 0 leaked secrets or tokens detected
+## Screenshot Evidence Status
 
-### 4. AWS EC2 Console & Security Group (`04_aws_ec2_instances.png`)
-- **What to capture:** AWS Management Console -> EC2 -> Instances list in `ap-south-1`.
-- **Key elements to highlight:**
-  - `app` instance (`t3.small`) in `running` state
-  - `monitor` instance (`t3.micro`) in `running` state
-  - Security group inbound rules displaying port 22 (restricted to student IP), port 30080 (public), and internal SG self-referencing rules (`self = true`)
+### Captured Evidence Files (Present in Directory)
 
-### 5. Ansible Full Playbook Run (`05_ansible_playbook_run.png`)
-- **What to capture:** Terminal output executing `ansible-playbook -i ansible/inventory/hosts.ini ansible/site.yml`.
-- **Key elements to highlight:**
-  - Successful execution of all roles: `common`, `puppet_agent`, `k3s`, `app`, `nagios_server`
-  - PLAY RECAP showing `failed=0` and `unreachable=0` across both hosts
+| Filename | Description | Status |
+|---|---|---|
+| `02_nagios_app_services.png` | Nagios Core Services view showing host `app1` UP and all 4 services OK | **CAPTURED** |
+| `08_nagios_dashboard.png` | Nagios Core Monitoring Dashboard showing post-recovery healthy state | **CAPTURED** |
+| `10_dashboard_healthy.png` | Node.js Status Dashboard (`/dashboard`) showing green HEALTHY badge and pod info | **CAPTURED** |
+| `13_nagios_failure.png` | Nagios Service detail showing `App HTTP /healthz` in CRITICAL state during simulated failure | **CAPTURED** |
 
-### 6. Kubernetes Cluster & Application Deployment (`06_k3s_cluster_status.png`)
-- **What to capture:** Terminal SSH session on `app1` running:
-  ```bash
-  k3s kubectl get all -n devops-demo
-  ```
-- **Key elements to highlight:**
-  - 2 running Pods (`myapp-*`)
-  - Service `myapp` with type `NodePort` mapping port 80 to `30080`
-  - Deployment maintaining 2 healthy replicas with zero restarts
+#### Evidence Details:
 
-### 7. Live Application Endpoint (`07_app_healthz_response.png`)
-- **What to capture:** Browser or curl command hitting the live application:
-  ```bash
-  curl -i http://<app-public-ip>:30080/healthz
-  ```
-- **Key elements to highlight:**
-  - HTTP status `200 OK`
-  - JSON payload: `{"status":"ok"}`
+1. **`02_nagios_app_services.png` (Nagios App Services Healthy)**
+   - **Captured View:** Nagios Core 4 web interface (`/nagios4/cgi-bin/status.cgi?host=app1`).
+   - **Key Elements:**
+     - Host `app1`: `UP` (green).
+     - `App HTTP /healthz`: `OK` (HTTP 200, status payload verified).
+     - `App response time`: `OK` (custom plugin performance data).
+     - `PING`: `OK` (0% packet loss via AWS Security Group internal ICMP rule).
+     - `SSH`: `OK` (port 22 accessible within SG).
+   - *Note on Localhost Warning:* The Nagios localhost check lists a `Swap Usage CRITICAL` entry because standard AWS EC2 Ubuntu AMIs do not configure a local swap partition; this is isolated to the monitoring server's local template and is completely unrelated to the `app1` application health.
 
-### 8. Nagios Core Monitoring Dashboard (`08_nagios_dashboard.png`)
-- **What to capture:** Nagios 4 web UI at `http://<monitor-public-ip>/nagios4/cgi-bin/status.cgi?host=app1`.
-- **Key elements to highlight:**
-  - Host `app1` in UP state
-  - All 4 monitored services in GREEN (OK) state:
-    1. `PING`
-    2. `SSH`
-    3. `App HTTP /healthz`
-    4. `App response time` (with performance data graph or metrics)
+2. **`08_nagios_dashboard.png` (Nagios Monitoring Dashboard Recovery)**
+   - **Captured View:** Nagios Core Services Overview after recovering the application workload.
+   - **Key Elements:**
+     - Host `app1` UP.
+     - All 4 application services verified in green `OK` state following replica recovery.
 
-### 9. Puppet MOTD & Automated Drift Correction (`09_puppet_drift_correction.png`)
-- **What to capture:** Terminal session demonstrating:
-  1. Login banner showing dynamic MOTD with environment classification (`PRODUCTION`, `STAGING`, or `DEVELOPMENT`)
-  2. Deletion of `/etc/motd` (`sudo rm -f /etc/motd`)
-  3. Catalog re-application (`puppet apply ...`) returning exit code `2`
-  4. Immediate restoration of `/etc/motd`
+3. **`10_dashboard_healthy.png` (Application Status Dashboard — Healthy)**
+   - **Captured View:** Browser visiting `http://<app-public-ip>:30080/dashboard`.
+   - **Key Elements:**
+     - Large green **HEALTHY** status badge.
+     - "Served by pod: `myapp-767bb84dc-ptvl8` (refreshing every 5s)".
+     - Status metric cards: Pod Name, App Version (`sha-ac61325`), Uptime, Memory (RSS), Node.js Runtime (`v22.23.4`), OS Platform (`linux`), Last Updated timestamp.
+     - Verified security headers: `Content-Security-Policy: default-src 'self'`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`.
 
-### 10. Status Dashboard — Healthy State (`10_dashboard_healthy.png`)
-- **What to capture:** Browser visiting `http://<app-public-ip>:30080/dashboard`.
-- **Key elements to highlight:**
-  - Big green "HEALTHY" badge
-  - "Served by pod <pod_name>" line
-  - Status cards displaying Pod Name, App Version, Uptime, Memory (RSS), Node.js Runtime, OS Platform, Last Updated
-  - Footer: "Deployed with GitHub Actions, Docker, Terraform, Ansible, k3s, Puppet and Nagios"
+4. **`13_nagios_failure.png` (Nagios Failure Detection)**
+   - **Captured View:** Nagios Service State detail for `App HTTP /healthz` during simulated outage (`replicas=0`).
+   - **Key Elements:**
+     - State: Red **CRITICAL**.
+     - Status Information: `connect to address 172.31.6.207 and port 30080: Connection refused. HTTP CRITICAL - Unable to open TCP socket`.
+     - Confirms Nagios active monitoring accurately detects pod outage in real time.
 
-### 11. Status Dashboard — Failure State (`11_dashboard_down.png`)
-- **What to capture:** Browser on `/dashboard` during the simulated failure (`kubectl scale deploy/myapp --replicas=0 -n staging`).
-- **Key elements to highlight:**
-  - Badge dynamically transitions to red "DOWN" badge via client-side fetch failure on `/healthz`.
+---
 
-### 12. Kubernetes Load Balancing Multi-Pod Verification (`12_dashboard_pod_toggle.png`)
-- **What to capture:** Two browser windows or side-by-side refreshes showing:
-  - "Served by pod" alternating between the two running Kubernetes replicas (`myapp-...-1` and `myapp-...-2`), proving Kubernetes Service round-robin load distribution.
+### Missing / Non-Captured Evidence
 
-### 13. Nagios Alert & Recovery Cycle (`13_nagios_failure_recovery.png`)
-- **What to capture:** Nagios web UI displaying:
-  - Red `CRITICAL` state for `App HTTP /healthz` and `App response time` when replicas=0
-  - Automatic return to green `OK` state when replicas are restored to 2.
+The following visual screenshot artifacts were not captured as image files:
+
+- **`09_puppet_drift_correction.png` (Puppet Drift Demonstration):**
+  - *Status:* Missing image file.
+  - *Verification Note:* Live execution on `app-staging-1` was verified via terminal execution:
+    1. Initial `/etc/motd` verified managed by Puppet baseline module.
+    2. Removal of `/etc/motd` (`sudo rm -f /etc/motd`) caused configuration drift.
+    3. Re-application (`sudo puppet apply --modulepath=/opt/puppet-demo/modules ...`) compiled the catalog and restored `/etc/motd` with `{sha256}83c1bf88d58cc1b5fcf3345435f3f47076d0c20fa69e23ed0f2a7d1c077fa8eb`.
+    4. Second apply with `--detailed-exitcodes` completed with **exit code 0** (idempotent, no changes needed).
+- **`11_dashboard_down.png` (Status Dashboard — Failure State):**
+  - *Status:* Missing image file.
+  - *Verification Note:* Failure state was captured via Nagios (`13_nagios_failure.png`).
+- **`12_dashboard_pod_toggle.png` (Multi-Pod Load Balancing):**
+  - *Status:* Missing image file.
+  - *Verification Note:* Multi-pod round-robin load distribution was verified via `scripts/verify_deployment.sh` and 10 sequential calls to `/api/status`, observing alternating responses between `myapp-767bb84dc-72vnb` and `myapp-767bb84dc-ptvl8`.
